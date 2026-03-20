@@ -74,21 +74,33 @@ const getFileIcon = (name = '') => {
   return map[ext] || '📎';
 };
 
-/* Storage abstraction — uses window.storage if available, else localStorage */
-const storage = {
-  get(key) {
+/* ── API VPS — données partagées (cards, project, activities) ── */
+const api = {
+  async load() {
     try {
-      if (window.storage?.getItem) return JSON.parse(window.storage.getItem(key));
-      if (window.localStorage) return JSON.parse(window.localStorage.getItem(key));
-    } catch { return null; }
-    return null;
+      const res = await fetch('/api/board');
+      if (!res.ok) throw new Error('Server error');
+      return await res.json();
+    } catch { return {}; }
+  },
+  async save(data) {
+    try {
+      await fetch('/api/board', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+    } catch { /* ignore network errors */ }
+  },
+};
+
+/* ── localStorage — données personnelles (user, settings) ── */
+const local = {
+  get(key) {
+    try { return JSON.parse(localStorage.getItem(key)); } catch { return null; }
   },
   set(key, val) {
-    try {
-      const s = JSON.stringify(val);
-      if (window.storage?.setItem) { window.storage.setItem(key, s); return; }
-      if (window.localStorage) window.localStorage.setItem(key, s);
-    } catch { /* ignore quota errors */ }
+    try { localStorage.setItem(key, JSON.stringify(val)); } catch {}
   },
 };
 
@@ -1758,41 +1770,42 @@ export default function ProjectBoard() {
     document.documentElement.style.setProperty('--accent', project.accentColor || '#6366f1');
   }, [project.accentColor]);
 
-  /* ── Load from storage ── */
+  /* ── Ref pour accès synchrone à l'état lors des saves ── */
+  const stateRef = useRef({ cards, project, activities });
+  useEffect(() => { stateRef.current.cards      = cards;      }, [cards]);
+  useEffect(() => { stateRef.current.project    = project;    }, [project]);
+  useEffect(() => { stateRef.current.activities = activities; }, [activities]);
+
+  /* ── Chargement depuis le VPS ── */
   useEffect(() => {
     const minDelay = new Promise(r => setTimeout(r, 500));
-    Promise.all([minDelay]).then(() => {
-      try {
-        const savedCards    = storage.get('pb_cards');
-        const savedUser     = storage.get('pb_user');
-        const savedProject  = storage.get('pb_project');
-        const savedActivities = storage.get('pb_activities');
-        const savedSettings = storage.get('pb_settings');
+    Promise.all([api.load(), minDelay]).then(([data]) => {
+      if (data.cards)      setCards(data.cards);
+      if (data.project)    setProject(p => ({ ...p, ...data.project }));
+      if (data.activities) setActivities(data.activities);
 
-        if (savedCards)    setCards(savedCards);
-        if (savedProject)  setProject(p => ({ ...p, ...savedProject }));
-        if (savedActivities) setActivities(savedActivities);
-        if (savedSettings) setSettings(s => ({ ...s, ...savedSettings }));
+      const savedSettings = local.get('pb_settings');
+      const savedUser     = local.get('pb_user');
+      if (savedSettings) setSettings(s => ({ ...s, ...savedSettings }));
+      if (savedUser) setUser(savedUser);
+      else setIsOnboarding(true);
 
-        if (savedUser) setUser(savedUser);
-        else setIsOnboarding(true);
-      } catch { /* fallback: start fresh */ }
       setIsLoading(false);
     });
   }, []);
 
-  /* ── Debounced save ── */
-  const scheduleSave = useCallback((key, val) => {
+  /* ── Sauvegarde debouncée sur le VPS (cards + project + activities) ── */
+  const scheduleSave = useCallback(() => {
     clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
-      try { storage.set(key, val); } catch { /* ignore */ }
-    }, 300);
+      api.save(stateRef.current);
+    }, 800);
   }, []);
 
-  useEffect(() => { scheduleSave('pb_cards', cards); }, [cards, scheduleSave]);
-  useEffect(() => { storage.set('pb_project', project); }, [project]);
-  useEffect(() => { storage.set('pb_settings', settings); }, [settings]);
-  useEffect(() => { storage.set('pb_activities', activities); }, [activities]);
+  useEffect(() => { scheduleSave(); }, [cards, project, activities, scheduleSave]);
+
+  /* ── Paramètres personnels → localStorage uniquement ── */
+  useEffect(() => { local.set('pb_settings', settings); }, [settings]);
 
   /* ── Activity log ── */
   const logActivity = useCallback((userObj, action) => {
@@ -1818,7 +1831,7 @@ export default function ProjectBoard() {
   /* ── Onboarding done ── */
   const handleOnboardingDone = useCallback((u) => {
     setUser(u);
-    storage.set('pb_user', u);
+    local.set('pb_user', u);
     setIsOnboarding(false);
     addToast(`Bienvenue ${u.emoji} ${u.name} !`, 'success');
   }, [addToast]);
