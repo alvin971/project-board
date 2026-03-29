@@ -74,16 +74,29 @@ const getFileIcon = (name = '') => {
   return map[ext] || '📎';
 };
 
+const BOARD_LS_KEY = 'pb_board_data';
+
 /* ── API VPS — données partagées (cards, project, activities) ── */
+/* Fallback automatique vers localStorage si le serveur est absent  */
 const api = {
   async load() {
     try {
-      const res = await fetch('/api/board');
-      if (!res.ok) throw new Error('Server error');
-      return await res.json();
+      const res = await fetch('/api/board', { signal: AbortSignal.timeout(3000) });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.cards?.length) {
+          try { localStorage.setItem(BOARD_LS_KEY, JSON.stringify(data)); } catch {}
+          return data;
+        }
+      }
+    } catch { /* server unavailable */ }
+    try {
+      const saved = localStorage.getItem(BOARD_LS_KEY);
+      return saved ? JSON.parse(saved) : {};
     } catch { return {}; }
   },
   async save(data) {
+    try { localStorage.setItem(BOARD_LS_KEY, JSON.stringify(data)); } catch {}
     try {
       await fetch('/api/board', {
         method: 'POST',
@@ -728,12 +741,17 @@ const CardContent = memo(({ card, compact, user, onVote, onToggleTask }) => {
 const CardItem = memo(({ card, index, compact, user,
   onDelete, onPin, onReact, onVote, onToggleTask,
   onExpand, onContextMenu, isDragging, isOver,
-  onDragStart, onDragEnter, onDragEnd,
+  onDragStart, onDragEnter, onDragEnd, onEdit,
 }) => {
   const typeInfo = CARD_TYPES.find(t => t.id === card.type);
   const TypeIcon = typeInfo?.Icon || FileText;
-  const totalReactions = Object.values(card.reactions || {}).reduce((a,b)=>a+b,0);
   const longPressTimer = useRef();
+  const touchStartX = useRef(0);
+  const [swipeX, setSwipeX] = useState(0);
+  const [isSwiping, setIsSwiping] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editValue, setEditValue] = useState(card.content?.text || '');
+  const DELETE_THRESHOLD = 80;
 
   const handleMouseDown = useCallback((e) => {
     if (e.button !== 0) return;
@@ -746,64 +764,136 @@ const CardItem = memo(({ card, index, compact, user,
     clearTimeout(longPressTimer.current);
   }, []);
 
+  const handleTouchStart = useCallback((e) => {
+    touchStartX.current = e.touches[0].clientX;
+    setIsSwiping(false);
+  }, []);
+
+  const handleTouchMove = useCallback((e) => {
+    const dx = e.touches[0].clientX - touchStartX.current;
+    if (dx < -5) {
+      setIsSwiping(true);
+      setSwipeX(Math.max(dx, -120));
+    }
+  }, []);
+
+  const handleTouchEnd = useCallback(() => {
+    if (swipeX < -DELETE_THRESHOLD) {
+      onDelete(card.id);
+    } else {
+      setSwipeX(0);
+    }
+    setIsSwiping(false);
+  }, [swipeX, card.id, onDelete]);
+
+  const handleEditSave = useCallback(() => {
+    if (onEdit && editValue.trim() !== (card.content?.text || '')) {
+      onEdit(card.id, { text: editValue.trim() });
+    }
+    setIsEditing(false);
+  }, [onEdit, card.id, card.content?.text, editValue]);
+
+  const canEdit = card.type === 'note' || card.type === 'link';
+
   return (
-    <div
-      className={`card-hover pb-card-enter`}
-      style={{
-        ...glassCard,
-        padding: compact ? '14px 16px' : '18px 20px',
-        cursor:'grab',
-        position:'relative',
-        animationDelay: `${Math.min(index * 60, 600)}ms`,
-        opacity: isDragging ? 0.4 : 1,
-        outline: isOver ? '2px solid var(--accent)' : 'none',
-        transition:'opacity 0.2s, outline 0.15s',
-        borderLeft: card.color ? `3px solid ${card.color}` : '1px solid var(--border)',
-      }}
-      draggable
-      onDragStart={() => onDragStart(card.id)}
-      onDragEnter={() => onDragEnter(card.id)}
-      onDragEnd={onDragEnd}
-      onMouseDown={handleMouseDown}
-      onMouseUp={handleMouseUp}
-      onContextMenu={e => { e.preventDefault(); onContextMenu(e, card.id); }}
-    >
-      {/* Pin badge */}
-      {card.pinned && (
-        <div style={{
-          position:'absolute', top:-8, right:12,
-          fontSize:16, filter:'drop-shadow(0 2px 4px rgba(0,0,0,0.3))',
-        }}>📌</div>
-      )}
-
-      {/* Header */}
-      <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:10 }}>
-        <div style={{
-          width:28, height:28, borderRadius:8, flexShrink:0,
-          background:`${card.color || 'var(--accent)'}20`,
-          display:'flex', alignItems:'center', justifyContent:'center',
-        }}>
-          <TypeIcon size={13} color={card.color || 'var(--accent)'}/>
-        </div>
-        <div style={{ flex:1, minWidth:0 }}>
-          <p style={{ fontSize:11, color:'var(--text-muted)', lineHeight:1 }}>
-            {typeInfo?.label} · {formatDate(card.createdAt)}
-          </p>
-        </div>
-        <button className="pb-btn" onClick={e => { e.stopPropagation(); onExpand(card.id); }}
-          style={{ background:'none', color:'var(--text-muted)', padding:2, opacity:0.6 }}>
-          <Maximize2 size={12}/>
-        </button>
-        <button className="pb-btn" onClick={e => { e.stopPropagation(); onContextMenu(e, card.id); }}
-          style={{ background:'none', color:'var(--text-muted)', padding:2 }}>
-          <MoreHorizontal size={14}/>
-        </button>
+    <div style={{ position:'relative', overflow:'hidden', borderRadius:'var(--radius)' }}>
+      {/* Delete background (visible on swipe) */}
+      <div style={{
+        position:'absolute', inset:0,
+        background:'#ef4444',
+        display:'flex', alignItems:'center', justifyContent:'flex-end',
+        paddingRight:20, borderRadius:'var(--radius)',
+        opacity: swipeX < -20 ? 1 : 0, transition: isSwiping ? 'none' : 'opacity 0.2s',
+      }}>
+        <Trash2 size={22} color="#fff"/>
       </div>
 
-      {/* Content */}
-      <div onClick={() => onExpand(card.id)} style={{ cursor:'pointer' }}>
-        <CardContent card={card} compact={compact} user={user} onVote={onVote} onToggleTask={onToggleTask}/>
-      </div>
+      <div
+        className={`card-hover pb-card-enter`}
+        style={{
+          ...glassCard,
+          padding: compact ? '14px 16px' : '18px 20px',
+          cursor:'grab',
+          position:'relative',
+          animationDelay: `${Math.min(index * 60, 600)}ms`,
+          opacity: isDragging ? 0.4 : 1,
+          outline: isOver ? '2px solid var(--accent)' : 'none',
+          transition: isSwiping ? 'transform 0.05s' : 'transform 0.25s ease, opacity 0.2s, outline 0.15s',
+          transform: `translateX(${swipeX}px)`,
+          borderLeft: card.color ? `3px solid ${card.color}` : '1px solid var(--border)',
+        }}
+        draggable={!isSwiping}
+        onDragStart={() => onDragStart(card.id)}
+        onDragEnter={() => onDragEnter(card.id)}
+        onDragEnd={onDragEnd}
+        onMouseDown={handleMouseDown}
+        onMouseUp={handleMouseUp}
+        onContextMenu={e => { e.preventDefault(); onContextMenu(e, card.id); }}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+      >
+        {/* Pin badge */}
+        {card.pinned && (
+          <div style={{
+            position:'absolute', top:-8, right:12,
+            fontSize:16, filter:'drop-shadow(0 2px 4px rgba(0,0,0,0.3))',
+          }}>📌</div>
+        )}
+
+        {/* Header */}
+        <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:10 }}>
+          <div style={{
+            width:28, height:28, borderRadius:8, flexShrink:0,
+            background:`${card.color || 'var(--accent)'}20`,
+            display:'flex', alignItems:'center', justifyContent:'center',
+          }}>
+            <TypeIcon size={13} color={card.color || 'var(--accent)'}/>
+          </div>
+          <div style={{ flex:1, minWidth:0 }}>
+            <p style={{ fontSize:11, color:'var(--text-muted)', lineHeight:1 }}>
+              {typeInfo?.label} · {formatDate(card.createdAt)}
+            </p>
+          </div>
+          {canEdit && (
+            <button className="pb-btn" onClick={e => { e.stopPropagation(); setIsEditing(v => !v); setEditValue(card.content?.text || ''); }}
+              style={{ background:'none', color: isEditing ? 'var(--accent)' : 'var(--text-muted)', padding:2, fontSize:12 }}>
+              ✎
+            </button>
+          )}
+          <button className="pb-btn" onClick={e => { e.stopPropagation(); onExpand(card.id); }}
+            style={{ background:'none', color:'var(--text-muted)', padding:2, opacity:0.6 }}>
+            <Maximize2 size={12}/>
+          </button>
+          <button className="pb-btn" onClick={e => { e.stopPropagation(); onContextMenu(e, card.id); }}
+            style={{ background:'none', color:'var(--text-muted)', padding:2 }}>
+            <MoreHorizontal size={14}/>
+          </button>
+        </div>
+
+        {/* Content — éditable si mode actif */}
+        {isEditing && canEdit ? (
+          <div style={{ marginBottom:8 }}>
+            <textarea
+              className="pb-input"
+              value={editValue}
+              onChange={e => setEditValue(e.target.value)}
+              onBlur={handleEditSave}
+              onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleEditSave(); } if (e.key === 'Escape') { setIsEditing(false); } }}
+              autoFocus
+              rows={4}
+              style={{ resize:'vertical', fontSize:13, lineHeight:1.6 }}
+            />
+            <div style={{ display:'flex', gap:6, marginTop:6 }}>
+              <button className="pb-btn" onClick={handleEditSave} style={{ fontSize:11, padding:'4px 10px', background:'var(--accent)', color:'#fff', border:'none', borderRadius:6 }}>Sauvegarder</button>
+              <button className="pb-btn" onClick={() => setIsEditing(false)} style={{ fontSize:11, padding:'4px 10px', background:'var(--glass)', border:'1px solid var(--border)', borderRadius:6 }}>Annuler</button>
+            </div>
+          </div>
+        ) : (
+          <div onClick={() => onExpand(card.id)} style={{ cursor:'pointer' }}>
+            <CardContent card={card} compact={compact} user={user} onVote={onVote} onToggleTask={onToggleTask}/>
+          </div>
+        )}
 
       {/* Footer */}
       <div style={{
@@ -837,6 +927,7 @@ const CardItem = memo(({ card, index, compact, user,
         </div>
       </div>
     </div>
+  </div>
   );
 });
 
@@ -2006,6 +2097,13 @@ export default function ProjectBoard() {
     }));
   }, [triggerConfetti, addToast]);
 
+  /* ── Édition du contenu d'une carte ── */
+  const handleEditCard = useCallback((cardId, newContent) => {
+    setCards(prev => prev.map(c =>
+      c.id === cardId ? { ...c, content: { ...c.content, ...newContent } } : c
+    ));
+  }, []);
+
   /* ── Context menu ── */
   const handleContextMenu = useCallback((e, cardId) => {
     e.preventDefault();
@@ -2352,6 +2450,7 @@ export default function ProjectBoard() {
                 onToggleTask={handleToggleTask}
                 onExpand={setExpandedCardId}
                 onContextMenu={handleContextMenu}
+                onEdit={handleEditCard}
                 isDragging={dragState.dragging === card.id}
                 isOver={dragState.over === card.id && dragState.dragging !== card.id}
                 onDragStart={handleDragStart}
