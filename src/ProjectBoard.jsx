@@ -26,11 +26,11 @@ const TAG_COLORS = [
 ];
 
 const ACCENT_COLORS = [
+  { name: 'Noir',    value: '#111111' },
   { name: 'Indigo',  value: '#6366f1' },
-  { name: 'Purple',  value: '#8b5cf6' },
-  { name: 'Pink',    value: '#ec4899' },
-  { name: 'Cyan',    value: '#06b6d4' },
+  { name: 'Blue',    value: '#3b82f6' },
   { name: 'Green',   value: '#22c55e' },
+  { name: 'Pink',    value: '#ec4899' },
   { name: 'Orange',  value: '#f97316' },
 ];
 
@@ -125,36 +125,39 @@ const GLOBAL_CSS = `
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
   :root {
-    --accent: #6366f1;
-    --bg: #0c0c12;
-    --surface: #141420;
-    --surface2: #1c1c2a;
+    --accent: #111111;
+    --bg: #111111;
+    --surface: #1a1a1a;
+    --surface2: #222222;
     --border: rgba(255,255,255,0.09);
-    --border-hover: rgba(255,255,255,0.18);
-    --text: #f0f0f8;
-    --text-muted: #888899;
-    --text-dim: #aaaabc;
-    --shadow: 0 2px 12px rgba(0,0,0,0.3);
-    --shadow-lg: 0 8px 32px rgba(0,0,0,0.4);
+    --border-hover: rgba(255,255,255,0.16);
+    --text: #eeeeee;
+    --text-muted: #777777;
+    --text-dim: #aaaaaa;
+    --shadow: 0 1px 6px rgba(0,0,0,0.4);
+    --shadow-lg: 0 4px 20px rgba(0,0,0,0.5);
     --glass: rgba(255,255,255,0.03);
     --glass-hover: rgba(255,255,255,0.06);
-    --radius: 12px;
-    --radius-sm: 8px;
+    --radius: 10px;
+    --radius-sm: 7px;
   }
 
   body.pb-light {
-    --bg: #f5f5fa;
+    --accent: #111111;
+    --bg: #f9f9f9;
     --surface: #ffffff;
-    --surface2: #f0f0f6;
-    --border: rgba(0,0,0,0.07);
-    --border-hover: rgba(0,0,0,0.14);
-    --text: #18182a;
-    --text-muted: #888899;
-    --text-dim: #555570;
-    --shadow: 0 2px 8px rgba(0,0,0,0.08);
-    --shadow-lg: 0 6px 24px rgba(0,0,0,0.12);
+    --surface2: #f4f4f4;
+    --border: #e8e8e8;
+    --border-hover: #cccccc;
+    --text: #111111;
+    --text-muted: #888888;
+    --text-dim: #555555;
+    --shadow: 0 1px 4px rgba(0,0,0,0.06), 0 4px 16px rgba(0,0,0,0.04);
+    --shadow-lg: 0 4px 24px rgba(0,0,0,0.1);
     --glass: rgba(0,0,0,0.02);
     --glass-hover: rgba(0,0,0,0.04);
+    --radius: 10px;
+    --radius-sm: 7px;
   }
 
   .pb-root {
@@ -1898,8 +1901,8 @@ const EmptyState = memo(({ onAdd }) => (
 export default function ProjectBoard() {
   const [cards, setCards]             = useState([]);
   const [user, setUser]               = useState(null);
-  const [project, setProject]         = useState({ title:'Mon Board', description:'', coverImage:null, accentColor:'#6366f1' });
-  const [settings, setSettings]       = useState({ darkMode:true, density:'comfortable' });
+  const [project, setProject]         = useState({ title:'Mon Board', description:'', coverImage:null, accentColor:'#111111' });
+  const [settings, setSettings]       = useState({ darkMode:false, density:'comfortable' });
   const [activeFilter, setActiveFilter] = useState('all');
   const [sortBy, setSortBy]           = useState('recent');
   const [searchQuery, setSearchQuery] = useState('');
