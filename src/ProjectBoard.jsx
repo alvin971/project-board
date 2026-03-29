@@ -126,33 +126,33 @@ const GLOBAL_CSS = `
 
   :root {
     --accent: #6366f1;
-    --bg: #0d0d14;
-    --surface: #13131f;
-    --surface2: #1a1a2e;
-    --border: rgba(255,255,255,0.07);
-    --border-hover: rgba(255,255,255,0.15);
-    --text: #e8e8f0;
-    --text-muted: #6b6b8a;
-    --text-dim: #9999b8;
-    --shadow: 0 8px 32px rgba(0,0,0,0.4);
-    --shadow-lg: 0 20px 60px rgba(0,0,0,0.6);
-    --glass: rgba(255,255,255,0.04);
-    --glass-hover: rgba(255,255,255,0.07);
-    --radius: 16px;
-    --radius-sm: 10px;
+    --bg: #0c0c12;
+    --surface: #141420;
+    --surface2: #1c1c2a;
+    --border: rgba(255,255,255,0.09);
+    --border-hover: rgba(255,255,255,0.18);
+    --text: #f0f0f8;
+    --text-muted: #888899;
+    --text-dim: #aaaabc;
+    --shadow: 0 2px 12px rgba(0,0,0,0.3);
+    --shadow-lg: 0 8px 32px rgba(0,0,0,0.4);
+    --glass: rgba(255,255,255,0.03);
+    --glass-hover: rgba(255,255,255,0.06);
+    --radius: 12px;
+    --radius-sm: 8px;
   }
 
   body.pb-light {
-    --bg: #f0f0f7;
+    --bg: #f5f5fa;
     --surface: #ffffff;
-    --surface2: #f7f7ff;
-    --border: rgba(0,0,0,0.08);
-    --border-hover: rgba(0,0,0,0.15);
-    --text: #1a1a2e;
-    --text-muted: #8888aa;
-    --text-dim: #5555777;
-    --shadow: 0 4px 16px rgba(0,0,0,0.1);
-    --shadow-lg: 0 12px 40px rgba(0,0,0,0.15);
+    --surface2: #f0f0f6;
+    --border: rgba(0,0,0,0.07);
+    --border-hover: rgba(0,0,0,0.14);
+    --text: #18182a;
+    --text-muted: #888899;
+    --text-dim: #555570;
+    --shadow: 0 2px 8px rgba(0,0,0,0.08);
+    --shadow-lg: 0 6px 24px rgba(0,0,0,0.12);
     --glass: rgba(0,0,0,0.02);
     --glass-hover: rgba(0,0,0,0.04);
   }
@@ -243,26 +243,40 @@ const GLOBAL_CSS = `
   .pb-input::placeholder { color: var(--text-muted); }
 
   .card-hover {
-    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    transition: transform 0.18s ease, box-shadow 0.18s ease;
   }
   .card-hover:hover {
-    transform: translateY(-3px);
-    box-shadow: 0 16px 40px rgba(0,0,0,0.35) !important;
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(0,0,0,0.25) !important;
   }
 
   .pb-tab-active { background: var(--accent) !important; color: #fff !important; }
 
-  .masonry {
-    column-gap: 16px;
-  }
+  .masonry { column-gap: 16px; }
   .masonry > * { break-inside: avoid; margin-bottom: 16px; }
 
   @media (min-width: 1200px) { .masonry { column-count: 3; } }
   @media (min-width: 768px) and (max-width: 1199px) { .masonry { column-count: 2; } }
-  @media (max-width: 767px)  { .masonry { column-count: 1; } }
+  @media (max-width: 767px)  { .masonry { column-count: 1; column-gap: 12px; } }
+  @media (max-width: 767px)  { .masonry > * { margin-bottom: 12px; } }
 
   .compact .masonry > * { margin-bottom: 10px; }
   .compact .masonry { column-gap: 10px; }
+
+  /* Sidebar responsive */
+  .pb-sidebar { width: min(300px, 90vw) !important; }
+
+  /* Top bar responsive */
+  @media (max-width: 600px) {
+    .pb-topbar-search { display: none !important; }
+    .pb-topbar { padding: 0 12px !important; gap: 8px !important; }
+  }
+
+  /* Contenu principal responsive */
+  .pb-main-content {
+    padding: clamp(14px, 4vw, 28px);
+    padding-bottom: 100px;
+  }
 `;
 
 /* ─────────────────────────── THEME TOKENS ──────────────────────── */
@@ -272,8 +286,6 @@ const glassCard = {
   border: '1px solid var(--border)',
   borderRadius: 'var(--radius)',
   boxShadow: 'var(--shadow)',
-  backdropFilter: 'blur(12px)',
-  WebkitBackdropFilter: 'blur(12px)',
 };
 
 /* ───────────────────────── SUB-COMPONENTS ──────────────────────── */
@@ -1494,7 +1506,7 @@ const Sidebar = memo(({
 
   const sidebarStyle = {
     position:'fixed', top:0, left:0, bottom:0,
-    width:280, zIndex:5000,
+    width:'min(300px, 90vw)', zIndex:5000,
     background:'var(--surface)',
     borderRight:'1px solid var(--border)',
     boxShadow:'var(--shadow-lg)',
@@ -2349,12 +2361,11 @@ export default function ProjectBoard() {
       <input ref={importRef} type="file" accept=".json" style={{ display:'none' }} onChange={handleImportFile}/>
 
       {/* ──── TOP BAR ──── */}
-      <div style={{
+      <div className="pb-topbar" style={{
         position:'sticky', top:0, zIndex:500,
         background:'var(--surface)', borderBottom:'1px solid var(--border)',
         padding:'0 20px', height:56,
         display:'flex', alignItems:'center', gap:12,
-        backdropFilter:'blur(12px)',
       }}>
         <button className="pb-btn" onClick={() => setIsSidebarOpen(v => !v)}
           style={{ background:'var(--glass)', border:'1px solid var(--border)', borderRadius:8, padding:'6px 10px', color:'var(--text)' }}>
@@ -2367,7 +2378,7 @@ export default function ProjectBoard() {
         </h1>
 
         {/* Quick search */}
-        <div style={{ position:'relative', display:'flex', alignItems:'center' }}>
+        <div className="pb-topbar-search" style={{ position:'relative', display:'flex', alignItems:'center' }}>
           <Search size={13} color="var(--text-muted)" style={{ position:'absolute', left:10 }}/>
           <input className="pb-input" placeholder="Rechercher..."
             value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
@@ -2400,7 +2411,7 @@ export default function ProjectBoard() {
       </div>
 
       {/* ──── MAIN CONTENT ──── */}
-      <div style={{ padding:'20px 20px 100px' }}>
+      <div className="pb-main-content">
 
         {/* Active filter / search indicator */}
         {(activeFilter !== 'all' || searchQuery) && (
@@ -2464,15 +2475,15 @@ export default function ProjectBoard() {
 
       {/* ──── FAB ──── */}
       <button className="pb-btn" onClick={() => setIsAddOpen(true)} style={{
-        position:'fixed', bottom:28, right:24, zIndex:600,
-        width:52, height:52, borderRadius:'50%',
+        position:'fixed', bottom:24, right:20, zIndex:600,
+        width:56, height:56, borderRadius:'50%',
         background:'var(--accent)', color:'#fff',
-        boxShadow:'0 8px 24px rgba(99,102,241,0.45)',
+        boxShadow:'0 4px 16px rgba(99,102,241,0.35)',
         display:'flex', alignItems:'center', justifyContent:'center',
-        fontSize:24, transition:'transform 0.2s, box-shadow 0.2s',
+        transition:'transform 0.15s, box-shadow 0.15s',
       }}
-      onMouseEnter={e => { e.currentTarget.style.transform='scale(1.08)'; e.currentTarget.style.boxShadow='0 12px 32px rgba(99,102,241,0.55)'; }}
-      onMouseLeave={e => { e.currentTarget.style.transform='scale(1)'; e.currentTarget.style.boxShadow='0 8px 24px rgba(99,102,241,0.45)'; }}>
+      onMouseEnter={e => { e.currentTarget.style.transform='scale(1.06)'; }}
+      onMouseLeave={e => { e.currentTarget.style.transform='scale(1)'; }}>
         <Plus size={22}/>
       </button>
 
