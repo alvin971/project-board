@@ -1,14 +1,31 @@
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
-const Anthropic = require('@anthropic-ai/sdk');
 
 const app = express();
 const PORT = 3002;
 const DATA_DIR  = path.join(__dirname, 'data');
 const DATA_FILE = path.join(DATA_DIR, 'board.json');
 
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const ZAI_API_KEY = process.env.ZAI_API_KEY || '9197359eea7a491284e365d5a4509c97.fe7fplcTTX0skayA';
+const ZAI_BASE_URL = 'https://api.z.ai/api/paas/v4';
+
+async function zaiChat(model, prompt, maxTokens = 1024) {
+  const res = await fetch(`${ZAI_BASE_URL}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${ZAI_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model,
+      messages: [{ role: 'user', content: prompt }],
+      max_tokens: maxTokens,
+    }),
+  });
+  const data = await res.json();
+  return data.choices[0].message.content;
+}
 
 app.use(express.json({ limit: '100mb' }));
 app.use(express.static(path.join(__dirname, 'dist')));
@@ -48,7 +65,6 @@ app.post('/api/spec/synthesize', async (req, res) => {
       return res.json({ spec_points: [] });
     }
 
-    // Construire le contexte à partir des cartes
     const cardsText = cards.map((card, i) => {
       const type = card.type || 'note';
       let content = '';
@@ -66,25 +82,14 @@ app.post('/api/spec/synthesize', async (req, res) => {
       ? `Projet: ${project.title}${project.description ? '\nDescription: ' + project.description : ''}\n\n`
       : '';
 
-    const message = await client.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 1024,
-      messages: [{
-        role: 'user',
-        content: `Tu es un expert en cahier des charges. Analyse ces cartes d'un board de projet et extrais les points clés sous forme de bullet points concis (max 15 points). Chaque point doit capturer une information essentielle sur le projet : fonctionnalité, contrainte, objectif, ou décision. Format : liste à puces (commence chaque ligne par "• "), une ligne par point. Retourne UNIQUEMENT les points, sans intro ni conclusion.
+    const prompt = `Tu es un expert en cahier des charges. Analyse ces cartes d'un board de projet et extrais les points clés sous forme de bullet points concis (max 15 points). Chaque point doit capturer une information essentielle sur le projet : fonctionnalité, contrainte, objectif, ou décision. Format : liste à puces (commence chaque ligne par "• "), une ligne par point. Retourne UNIQUEMENT les points, sans intro ni conclusion.
 
 ${projectContext}Cartes du board :
-${cardsText}`
-      }]
-    });
+${cardsText}`;
 
-    const text = message.content[0].text;
-    const points = text
-      .split('\n')
-      .map(l => l.trim())
-      .filter(l => l.length > 0);
+    const text = await zaiChat('glm-4.7-flash', prompt, 1024);
+    const points = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
 
-    // Persister dans board.json
     let boardData = {};
     if (fs.existsSync(DATA_FILE)) {
       boardData = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
@@ -126,12 +131,7 @@ app.post('/api/spec/finalize', async (req, res) => {
       ? `Points clés identifiés :\n${spec_points.join('\n')}\n\n`
       : '';
 
-    const message = await client.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 4096,
-      messages: [{
-        role: 'user',
-        content: `Tu es un expert en rédaction de cahiers des charges. À partir des informations suivantes collectées sur ce projet, rédige un cahier des charges complet, structuré et précis en français.
+    const prompt = `Tu es un expert en rédaction de cahiers des charges. À partir des informations suivantes collectées sur ce projet, rédige un cahier des charges complet, structuré et précis en français.
 
 Structure obligatoire :
 # Cahier des charges — [Nom du projet]
@@ -145,13 +145,10 @@ Structure obligatoire :
 Sois précis, concret et actionnable. Utilise le markdown.
 
 ${projectContext}${pointsText}Cartes du board :
-${cardsText}`
-      }]
-    });
+${cardsText}`;
 
-    const spec_final = message.content[0].text;
+    const spec_final = await zaiChat('glm-4.7', prompt, 4096);
 
-    // Persister dans board.json
     let boardData = {};
     if (fs.existsSync(DATA_FILE)) {
       boardData = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
@@ -175,7 +172,5 @@ app.use((req, res) => {
 app.listen(PORT, () => {
   console.log(`✅ Project Board running on http://localhost:${PORT}`);
   console.log(`💾 Data stored at: ${DATA_FILE}`);
-  if (!process.env.ANTHROPIC_API_KEY) {
-    console.warn('⚠️  ANTHROPIC_API_KEY not set — spec generation will fail');
-  }
+  console.log(`🤖 ZAI/GLM API configured (glm-4.7-flash / glm-4.7)`);
 });
