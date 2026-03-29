@@ -1374,6 +1374,7 @@ const Sidebar = memo(({
   cards, activities, contributors,
   onExport, onImport, onOpenSettings,
   searchRef,
+  specPoints, specFinal, specLoading, specFinalizing, onFinalize,
 }) => {
   const [editingTitle, setEditingTitle] = useState(false);
   const [editingDesc, setEditingDesc]   = useState(false);
@@ -1575,6 +1576,69 @@ const Sidebar = memo(({
             </div>
           )}
 
+          {/* Cahier des charges */}
+          <div style={{ marginBottom:16 }}>
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8 }}>
+              <p style={{ fontSize:11, color:'var(--text-muted)', fontWeight:600, letterSpacing:'0.06em', textTransform:'uppercase' }}>
+                Cahier des charges
+              </p>
+              {specLoading && (
+                <span style={{ fontSize:10, color:'var(--text-muted)', fontStyle:'italic' }}>Analyse…</span>
+              )}
+            </div>
+
+            {specPoints.length > 0 && (
+              <div style={{
+                background:'var(--glass)', border:'1px solid var(--border)',
+                borderRadius:'var(--radius-sm)', padding:'10px 12px', marginBottom:8,
+              }}>
+                {specPoints.map((pt, i) => (
+                  <p key={i} style={{ fontSize:11, color:'var(--text-dim)', lineHeight:1.6, marginBottom:2 }}>{pt}</p>
+                ))}
+              </div>
+            )}
+
+            {specPoints.length === 0 && !specLoading && (
+              <p style={{ fontSize:11, color:'var(--text-muted)', fontStyle:'italic', marginBottom:8 }}>
+                Ajoutez des cartes pour générer une vue d'ensemble.
+              </p>
+            )}
+
+            <button
+              className="pb-btn"
+              onClick={onFinalize}
+              disabled={specFinalizing || specPoints.length === 0}
+              style={{
+                display:'flex', alignItems:'center', justifyContent:'center', gap:6,
+                width:'100%', padding:'9px 12px', borderRadius:'var(--radius-sm)',
+                background: specPoints.length > 0 ? (project.accentColor || 'var(--accent)') : 'var(--glass)',
+                color: specPoints.length > 0 ? '#fff' : 'var(--text-muted)',
+                border:'none', fontSize:13, fontWeight:600,
+                opacity: specFinalizing ? 0.7 : 1,
+                cursor: specPoints.length === 0 ? 'default' : 'pointer',
+              }}
+            >
+              {specFinalizing ? '⏳ Génération…' : '📄 Finaliser le cahier des charges'}
+            </button>
+
+            {specFinal && (
+              <div style={{
+                marginTop:10, background:'var(--glass)',
+                border:'1px solid var(--border)', borderRadius:'var(--radius-sm)',
+                padding:'12px', maxHeight:400, overflowY:'auto',
+              }}>
+                <p style={{ fontSize:11, color:'var(--text-muted)', fontWeight:600, marginBottom:8, letterSpacing:'0.04em' }}>
+                  CAHIER DES CHARGES FINAL
+                </p>
+                <pre style={{
+                  fontSize:11, color:'var(--text)', lineHeight:1.7,
+                  whiteSpace:'pre-wrap', wordBreak:'break-word', margin:0,
+                  fontFamily:'inherit',
+                }}>{specFinal}</pre>
+              </div>
+            )}
+          </div>
+
           {/* Actions */}
           <div style={{ display:'flex', flexDirection:'column', gap:6, marginTop:'auto', paddingTop:8 }}>
             <button className="pb-btn" onClick={onExport} style={{
@@ -1748,8 +1812,13 @@ export default function ProjectBoard() {
   const [isLoading, setIsLoading]     = useState(true);
   const [confetti, setConfetti]       = useState(false);
   const [dragState, setDragState]     = useState({ dragging:null, over:null });
+  const [specPoints, setSpecPoints]   = useState([]);
+  const [specFinal, setSpecFinal]     = useState(null);
+  const [specLoading, setSpecLoading] = useState(false);
+  const [specFinalizing, setSpecFinalizing] = useState(false);
 
   const saveTimer   = useRef();
+  const specTimer   = useRef();
   const searchRef   = useRef();
   const importRef   = useRef();
 
@@ -1771,18 +1840,22 @@ export default function ProjectBoard() {
   }, [project.accentColor]);
 
   /* ── Ref pour accès synchrone à l'état lors des saves ── */
-  const stateRef = useRef({ cards, project, activities });
-  useEffect(() => { stateRef.current.cards      = cards;      }, [cards]);
-  useEffect(() => { stateRef.current.project    = project;    }, [project]);
-  useEffect(() => { stateRef.current.activities = activities; }, [activities]);
+  const stateRef = useRef({ cards, project, activities, spec_points: [], spec_final: null });
+  useEffect(() => { stateRef.current.cards        = cards;       }, [cards]);
+  useEffect(() => { stateRef.current.project      = project;     }, [project]);
+  useEffect(() => { stateRef.current.activities   = activities;  }, [activities]);
+  useEffect(() => { stateRef.current.spec_points  = specPoints;  }, [specPoints]);
+  useEffect(() => { stateRef.current.spec_final   = specFinal;   }, [specFinal]);
 
   /* ── Chargement depuis le VPS ── */
   useEffect(() => {
     const minDelay = new Promise(r => setTimeout(r, 500));
     Promise.all([api.load(), minDelay]).then(([data]) => {
-      if (data.cards)      setCards(data.cards);
-      if (data.project)    setProject(p => ({ ...p, ...data.project }));
-      if (data.activities) setActivities(data.activities);
+      if (data.cards)        setCards(data.cards);
+      if (data.project)      setProject(p => ({ ...p, ...data.project }));
+      if (data.activities)   setActivities(data.activities);
+      if (data.spec_points)  setSpecPoints(data.spec_points);
+      if (data.spec_final)   setSpecFinal(data.spec_final);
 
       const savedSettings = local.get('pb_settings');
       const savedUser     = local.get('pb_user');
@@ -1794,7 +1867,7 @@ export default function ProjectBoard() {
     });
   }, []);
 
-  /* ── Sauvegarde debouncée sur le VPS (cards + project + activities) ── */
+  /* ── Sauvegarde debouncée sur le VPS (cards + project + activities + spec) ── */
   const scheduleSave = useCallback(() => {
     clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
@@ -1803,6 +1876,30 @@ export default function ProjectBoard() {
   }, []);
 
   useEffect(() => { scheduleSave(); }, [cards, project, activities, scheduleSave]);
+
+  /* ── Synthèse IA debouncée après chaque changement de cartes ── */
+  const scheduleSpecSynth = useCallback(() => {
+    clearTimeout(specTimer.current);
+    specTimer.current = setTimeout(async () => {
+      if (stateRef.current.cards.length === 0) return;
+      setSpecLoading(true);
+      try {
+        const res = await fetch('/api/spec/synthesize', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            cards: stateRef.current.cards,
+            project: stateRef.current.project,
+          }),
+        });
+        const data = await res.json();
+        if (data.spec_points) setSpecPoints(data.spec_points);
+      } catch { /* ignore */ }
+      setSpecLoading(false);
+    }, 1500);
+  }, []);
+
+  useEffect(() => { scheduleSpecSynth(); }, [cards, scheduleSpecSynth]);
 
   /* ── Paramètres personnels → localStorage uniquement ── */
   useEffect(() => { local.set('pb_settings', settings); }, [settings]);
@@ -1946,6 +2043,24 @@ export default function ProjectBoard() {
 
   const handleImport = useCallback(() => importRef.current?.click(), []);
 
+  const handleFinalize = useCallback(async () => {
+    setSpecFinalizing(true);
+    try {
+      const res = await fetch('/api/spec/finalize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          cards: stateRef.current.cards,
+          project: stateRef.current.project,
+          spec_points: stateRef.current.spec_points,
+        }),
+      });
+      const data = await res.json();
+      if (data.spec_final) setSpecFinal(data.spec_final);
+    } catch { /* ignore */ }
+    setSpecFinalizing(false);
+  }, []);
+
   const handleImportFile = useCallback((e) => {
     const f = e.target.files[0]; if (!f) return;
     const reader = new FileReader();
@@ -2079,6 +2194,11 @@ export default function ProjectBoard() {
         onImport={handleImport}
         onOpenSettings={() => { setIsSettingsOpen(true); setIsSidebarOpen(false); }}
         searchRef={searchRef}
+        specPoints={specPoints}
+        specFinal={specFinal}
+        specLoading={specLoading}
+        specFinalizing={specFinalizing}
+        onFinalize={handleFinalize}
       />
 
       {/* Settings */}
