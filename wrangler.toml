@@ -1,0 +1,7 @@
+name = "project-board"
+compatibility_date = "2024-09-23"
+pages_build_output_dir = "dist"
+
+[[kv_namespaces]]
+binding = "BOARD_DATA"
+id = "bc1e47932d36470c9b9c62c67551e4f3"
